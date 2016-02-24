@@ -9,7 +9,7 @@ def main():
 
     module = AnsibleModule(
         argument_spec = dict(
-			link = dict(type="path", default=None),
+            link = dict(type="path", default=None),
             step = dict(type="int", required=False, default=1),
             force = dict(type="bool", required=False, default=False),
             sort = dict(required=False, default="name"),
