@@ -6,13 +6,30 @@ import json
 import shutil
 
 
+def list_dirs(root_dir):
+    dir_list = []
+    for f in os.listdir(root_dir):
+        f = os.path.join(root_dir, f)
+        if os.path.isdir(f) and not os.path.islink(f):
+            dir_list.append(f)
+    return dir_list
+
+def sort_dirs(sort, dir_list):
+    # Default to python's own sort if no known options are specified
+    if sort == "creation":
+        strategy = lambda d: os.stat(d).st_ctime
+    elif sort == "modification":
+        strategy = lambda d: os.stat(d).st_mtime
+    else:
+        strategy = None
+    return sorted(dir_list, key=strategy)
+
 def main():
 
     module = AnsibleModule(
         argument_spec = dict(
             link = dict(type="path", default=None),
             step = dict(type="int", required=False, default=1),
-            force = dict(type="bool", required=False, default=False),
             sort = dict(required=False, default="name"),
             prune = dict(type="bool", required=False, default=False),
         )
@@ -20,7 +37,6 @@ def main():
 
     link = module.params["link"]
     step = module.params["step"]
-    force = module.params["force"]
     sort = module.params["sort"]
     prune = module.params["prune"]
 
@@ -32,38 +48,21 @@ def main():
     if sort not in ('name', 'creation', 'modification'):
         module.fail_json(msg="The sort parameter must be 'name', 'creation' or 'modification'")
 
+    # Define our variables
     target = os.path.realpath(link)
     root_dir = os.path.dirname(target)
     symlink = os.path.basename(link)
+    dir_list = sort_dirs(sort, list_dirs(root_dir))
 
-    # Default to python's own sort if no known options are specified
-    if sort == "creation":
-        strategy = lambda x: os.stat(os.path.join(root_dir, x)).st_ctime
-    elif sort == "modification":
-        strategy = lambda x: os.stat(os.path.join(root_dir, x)).st_mtime
-    else:
-        strategy = None
+    # If out of bounds, coalesce the index to a sane value
+    index = step + dir_list.index(target)
+    if index > len(dir_list) - 1:
+        index = len(dir_list) - 1
+    elif index < 0:
+        index = 0
 
-    # Executing os.path.islink above already guarantees we can read the
-    # contents of the directory, so no need for extra error checking
-    contents = sorted(os.listdir(root_dir), key=strategy)
-    contents.remove(symlink)
-
-    delta = step + contents.index(os.path.basename(target))
-
-    # If out of bounds and force is true, coalesce the delta to a sane value
-    error = None
-    if delta > len(contents) - 1:
-        error = "Unable to move forward, invalid target. Delta: %d" % delta
-        delta = -1
-    elif delta < 0:
-        error = "Unable to move backward, invalid target. Delta: %d" % delta
-        delta = 0
-
-    if error and not force:
-        module.fail_json(msg=error + " Current: (%s) List: (%s)" % (os.path.basename(target), contents))
-
-    new_link = os.path.join(root_dir, contents[delta])
+    # Relink
+    new_link = dir_list[index]
     try:
         os.unlink(link)
         os.symlink(new_link, link)
@@ -71,19 +70,19 @@ def main():
         module.fail_json(msg="Unable to change symlink from (%s) to (%s). Error: %s" % (new_link, link, e))
 
     if not prune:
-        module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=delta)
+        module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=index)
 
     prune_dirs = []
 
     if step > 0:
-        prune_dirs = contents[:delta]
+        prune_dirs = dir_list[:index]
     elif step < 0:
-        prune_dirs = contents[delta + 1:]
+        prune_dirs = dir_list[index+ 1:]
 
     for directory in prune_dirs:
-        shutil.rmtree(os.path.join(root_dir, directory))
+        shutil.rmtree(directory)
 
-    module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=delta, deleted=prune_dirs)
+    module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=index, deleted=prune_dirs)
 
 # import module snippets
 from ansible.module_utils.basic import *
