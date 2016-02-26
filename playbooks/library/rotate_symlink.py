@@ -3,6 +3,7 @@
 
 import os
 import json
+import shutil
 
 
 def main():
@@ -13,6 +14,7 @@ def main():
             step = dict(type="int", required=False, default=1),
             force = dict(type="bool", required=False, default=False),
             sort = dict(required=False, default="name"),
+            prune = dict(type="bool", required=False, default=False),
         )
     )
 
@@ -20,6 +22,7 @@ def main():
     step = module.params["step"]
     force = module.params["force"]
     sort = module.params["sort"]
+    prune = module.params["prune"]
 
     # Sanity check
     if not os.path.islink(link):
@@ -67,8 +70,20 @@ def main():
     except OSError as e:
         module.fail_json(msg="Unable to change symlink from (%s) to (%s). Error: %s" % (new_link, link, e))
 
-    module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=delta)
+    if not prune:
+        module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=delta)
 
+    prune_dirs = []
+
+    if step > 0:
+        prune_dirs = contents[:delta]
+    elif step < 0:
+        prune_dirs = contents[delta + 1:]
+
+    for directory in prune_dirs:
+        shutil.rmtree(os.path.join(root_dir, directory))
+
+    module.exit_json(changed=True, old_link=link, new_link=new_link, final_index=delta, deleted=prune_dirs)
 
 # import module snippets
 from ansible.module_utils.basic import *
