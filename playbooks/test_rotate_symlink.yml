@@ -1,0 +1,83 @@
+- hosts: 127.0.0.1
+  tasks:
+    - name: Setup test environment
+      file: path=/tmp/randomdir state=directory mode=0755
+    - name: Create fake deployment dirs
+      file: path=/tmp/test/{{ item }} state=directory mode=0755
+      with_items: # The lack of order is purposeful
+        - hello1
+        - hello5
+        - hello3
+        - hello2
+        - hello4
+    - name: Get the symlink up
+      file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step 1 with default sort
+        rotate_symlink: link=/tmp/test/hello step=1
+      - stat: path=/tmp/test/hello
+        register: sym
+        failed_when: sym.stat.lnk_source != '/tmp/test/hello4'
+      always: 
+        - file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step 1 with creation date sort
+        rotate_symlink: link=/tmp/test/hello step=1 sort=creation
+      - stat: path=/tmp/test/hello
+        register: sym
+        failed_when: sym.stat.lnk_source != '/tmp/test/hello2'
+      always: 
+        - file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step 2 with default sort
+        rotate_symlink: link=/tmp/test/hello step=2
+      - stat: path=/tmp/test/hello
+        register: sym
+        failed_when: sym.stat.lnk_source != '/tmp/test/hello5'
+      rescue: 
+        - file: path=/tmp/test state=absent
+      always: 
+        - file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step -2 with default sort
+        rotate_symlink: link=/tmp/test/hello step=-2
+      - stat: path=/tmp/test/hello
+        register: sym
+        failed_when: sym.stat.lnk_source != '/tmp/test/hello1'
+      rescue: 
+        - file: path=/tmp/test state=absent
+      always: 
+        - file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step -1 with creation sort
+        rotate_symlink: link=/tmp/test/hello step=-1 sort=creation
+      - stat: path=/tmp/test/hello
+        register: sym
+        failed_when: sym.stat.lnk_source != '/tmp/test/hello5'
+      rescue: 
+        - file: path=/tmp/test state=absent
+      always: 
+        - file: path=/tmp/test/hello src=/tmp/test/hello3 state=link
+
+    - block:
+      - name: Test step -2 with creation sort and pruning
+        rotate_symlink: link=/tmp/test/hello step=-1 sort=creation prune=true
+      - stat: path=/tmp/test/hello3
+        register: dir
+        failed_when: dir.stat.exists
+      - stat: path=/tmp/test/hello2
+        register: dir
+        failed_when: dir.stat.exists
+      - stat: path=/tmp/test/hello4
+        register: dir
+        failed_when: dir.stat.exists
+      rescue: 
+        - file: path=/tmp/test state=absent
+
+    - name: Delete test directory
+      file: path=/tmp/test state=absent
