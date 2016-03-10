@@ -1,0 +1,27 @@
+# ansible-playbook gitserver.yml --extra-vars="hosts=127.0.0.1" --ask-sudo-pass
+
+- hosts: "{{ hosts }}"
+  become: true
+  become_user: git
+  vars:
+    user: git
+    rootdir: /home/git/projects
+  tasks:
+    - name: Install the latest git package
+      package: name=git state=latest
+    - name: Ensure git shell is installed
+      package: name=git-sh state=latest
+      when: ansible_os_family == "Debian" or ansible_os_family == "Ubuntu"
+
+    - name: Create git user
+      #user: name={{ user  }} comment="Git Daemon" shell=/usr/bin/git-shell
+      user: name={{ user  }} comment="Git Daemon"
+    - name: Create projects directory
+      file: path={{ rootdir }} state=directory mode=0744
+
+    - name: Configure gitserver
+      gitserver:
+        rootdir: "{{ rootdir }}"
+        project: exampleproject
+        remote: grilo@github.com:grilo/ansible.git
+        privatekey: /home/git/.ssh/id_rsa
