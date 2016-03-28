@@ -60,7 +60,7 @@ def main():
         os.makedirs(project_dir)
 
     os.chdir(project_dir)
-    returncode = subprocess.call(["git", "init"], stdout=subprocess.PIPE)
+    returncode = subprocess.call(["git", "init", "--bare"], stdout=subprocess.PIPE)
     if returncode > 0:
         module.fail_json(msg="Unable to create bare repository in directory (%s)." % (project_dir))
 
