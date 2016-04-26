@@ -9,10 +9,23 @@ import shutil
 
 class AccuRev(object):
 
-    def __init__(self, module, dest, depot, stream, username, password, executable):
+    commands = {
+        'workspace': {
+            'create': 'mkws -w',
+            'change': 'chws -w',
+            'remove': 'wspace',
+        },
+        'reftree': {
+            'create': 'mkref -r',
+            'change': 'chref -r',
+            'remove': 'reftree',
+        },
+    }
+
+    def __init__(self, module, dest, stream_type, depot, stream, username, password, executable):
         self.module = module
         self.dest = dest
-        self.definition = self._get_definition()
+        self.stream_type = stream_type
         self.name = os.path.basename(dest)
         self.depot = depot
         self.stream = stream
@@ -20,80 +33,48 @@ class AccuRev(object):
         self.password = password
         self.executable = executable
 
-    def _command(self, command, check_rc=True):
+    def _cmd(self, command, check_rc=True):
+        owd = os.getcwd()
+        os.chdir(self.dest)
+
         command = ' '.join([self.executable, command])
         rc, out, err = self.module.run_command(shlex.split(command), check_rc)
-        if rc != 0:
-            raise Exception
+
+        os.chdir(owd)
         return (rc, out, err)
 
-    def _command_in_dir(self, path, command):
-        owd = os.getcwd()
-        os.chdir(path)
-        result = self._command(command)
-        os.chdir(owd)
-        return result
-
-    def _get_definition(self):
-        # I should parse the XML output and confirm that the workspace/reftree
-        # exists. If it does, it should match the given type, otherwise we
-        # should throw an exception and abort immediately.
-        rc, out, err = self._command('accurev show -p %s streams' % (depot))
-
-    def is_logged_in(self):
-        self._command('info')
-
     def login(self):
-        self._command('login %s %s' % (self.username, self.password))
-
-    def is_workspace(self):
-        rc, out, err = self._command_in_dir(self.dest, 'info')
-
-    def change(self):
-        # Delete the old location
-        if self.is_workspace(self.dest) and re.match('[A-Za-z0-9]+', self.dest):
-            shutil.rmtree(self.definition['location'])
-
-        cmd = ''
-        if self.definition['type'] == 'workspace':
-            cmd = 'chws -w'
-        elif self.definition['type'] == 'reftree':
-            cmd = 'chref -r'
-        else: raise Exception
-        cmd += '"%s" -b "%s" -l "%s"' % (self.name, self.stream, self.dest)
-        self._command(cmd)
+        _, out, _ = self._cmd('info')
+        if re.match('Username:', out):
+            self._cmd('login %s %s' % (self.username, self.password))
+        return True
 
     def create(self):
-        cmd = ''
-        if self.definition['type'] == 'workspace':
-            cmd = 'mkws -w'
-        elif self.definition['type'] == 'reftree':
-            cmd = 'mkref -r'
-        else: raise Exception
-        cmd += '"%s" -b "%s" -l "%s"' % (self.name, self.stream, self.dest)
-        self._command(cmd)
+        cmd = AccuRev.commands[self.stream_type]['create']
+        cmd += ' "%s" -b "%s" -l .' % (self.name, self.stream)
+        rc, out, err = self._cmd(cmd)
+        if "already exists" in err:
+            rc, out, err = self.change()
+            if rc != 0:
+                raise Exception("Unable to create nor change the workspace/reftree.")
+
+    def change(self):
+        cmd = AccuRev.commands[self.stream_type]['change']
+        cmd += ' "%s" -b "%s" -l .' % (self.name, self.stream)
+        self._cmd(cmd)
+
+    def update(self, force=False):
+        if not force:
+            return self._cmd('update')
+        self._cmd('update -9')
+        self._cmd('pop -R -O .')
 
     def remove(self):
-        cmd = 'remove '
-        if self.definition['type'] == 'workspace':
-            cmd += 'wspace '
-        elif self.definitioin['type'] == 'reftree':
-            cmd += 'reftree '
-        else: raise Exception
-        cmd += self.name
-        self._command(cmd)
-
-    def update(self, path, force=False):
-        if not force:
-            return self._command_in_dir(self.dest, 'update')
-
-        # Make sure we're not deleting anything we shouldn't
-        if self.is_workspace(path) and re.match('[A-Za-z0-9]+', path):
-            shutil.rmtree(path)
-            self._command_in_dir(self.dest, 'update -9')
-            self._command_in_dir(self.dest, 'pop -R -O .')
-        else:
-            raise Exception
+        cmd = 'remove %s' % AccuRev.commands[self.stream_type]['remove']
+        cmd += ' %s' % (self.name)
+        rc, out, err = self._cmd(cmd)
+        if rc != 0:
+            raise Exception("Unable to remove the workspace/reftree.")
 
 # ===========================================
 
@@ -101,7 +82,7 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             dest=dict(required=True, type='path'),
-            desttype=dict(required=False, default='workspace'),
+            stream_type=dict(required=False, default='workspace'),
             depot=dict(required=True),
             stream=dict(default=None),
             force=dict(default=False, type='bool'),
@@ -114,7 +95,7 @@ def main():
     )
 
     dest = module.params['dest']
-    desttype = module.params['desttype']
+    stream_type = module.params['stream_type']
     depot = module.params['depot']
     stream = module.params['stream']
     force = module.params['force']
@@ -129,23 +110,14 @@ def main():
     elif not dest.startswith("/") and not re.match('[A-Za-z]+:', dest):
         module.fail_json(msg="dest parameter (%s) must be an absolute path." % (dest))
 
-    accurev = AccuRev(module, dest, depot, stream, username, password, executable)
+    accurev = AccuRev(module, dest, stream_type, depot, stream, username, password, executable)
+    accurev.login()
 
-    if not accurev.is_logged_in():
-        accurev.login()
-
-    if desttype == 'workspace':
-        if state == 'absent' and accurev.is_workspace():
-            accurev.remove_workspace()
-        elif not accurev.is_workspace():
-            accurev.create_workspace()
-    elif desttype == 'reftree':
-        if state == 'absent' and accurev.is_reftree():
-            accurev.remove_workspace()
-        if not accurev.is_reftree():
-            accurev.create_reftree()
+    if state == 'absent':
+        accurev.remove()
     else:
-        module.fail_json(msg="desttype parameter (%s) has an unknown value." % (desttype))
+        accurev.create()
+        accurev.update(force)
     module.exit_json(changed=True, dest=dest, desttype=desttype, state=state)
 
 # import module snippets
