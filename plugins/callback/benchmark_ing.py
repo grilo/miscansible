@@ -39,7 +39,7 @@ class CallbackModule(ansible.plugins.callback.CallbackBase):
             self._running_tasks[uuid] = {}
             self._running_tasks[uuid]['name'] = str(task).split(": ", 1)[1]
         self._running_tasks[uuid][key] = time.time()
-        if key == "stop":
+        if key == "stop" and self._display.verbosity > 0:
             delta = self._running_tasks[uuid]['stop'] - self._running_tasks[uuid]['start']
             self._display.display("Finished in (%.3f) seconds" % (delta), color='cyan')
 
