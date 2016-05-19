@@ -46,6 +46,8 @@ class CallbackModule(ansible.plugins.callback.CallbackBase):
     # Initialize the counter
     def v2_playbook_on_task_start(self, task, is_conditional):
         self._tracktask('start', task)
+    def v2_playbook_on_handler_task_start(self, task):
+        self._tracktask('start', task)
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
         self._tracktask('stop', result._task)
