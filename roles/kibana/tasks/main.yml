@@ -1,0 +1,80 @@
+- name: Download kibana tarball
+  unarchive:
+    src: https://artifacts.elastic.co/downloads/kibana/kibana-{{ version }}.tar.gz
+    dest: /opt
+    copy: no
+    remote_src: True
+
+- name: Kibana service is stopped
+  service:
+    name: kibana
+    pattern: /opt/kibana/bin/kibana
+    state: stopped
+
+- name: Wait for kibana to be stopped
+  wait_for:
+    port: 5601
+    delay: 1
+    connect_timeout: 2
+    state: drained
+    timeout: 30
+
+- name: Create kibana symlink
+  file:
+    src: /opt/kibana-{{ version }}
+    dest: /opt/kibana
+    state: link
+
+- name: Connect kibana to elasticsearch
+  lineinfile:
+    dest: /opt/kibana/config/kibana.yml
+    regexp: '^elasticsearch.url'
+    insertafter: '^#elasticsearch.url'
+    line: 'elasticsearch.url: http://localhost:9200'
+
+- name: Create SysV initd script
+  template:
+    src: templates/initd.j2
+    dest: /opt/kibana/bin/kibana.initd
+    mode: 0755
+
+- name: Create kibana init service symlink
+  file:
+    src: /opt/kibana/bin/kibana.initd
+    dest: /etc/init.d/kibana
+    state: link
+
+- name: Create systemd script
+  template:
+    src: templates/systemd.j2
+    dest: /opt/kibana/bin/kibana.systemd
+    mode: 0755
+
+- name: Create kibana systemd service symlink
+  file:
+    src: /opt/kibana/bin/kibana.systemd
+    dest: /etc/systemd/system/kibana.service
+    state: link
+
+- name: Applying correct permissions recursively
+  file:
+    path: "/opt/kibana-{{ version }}"
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: 0755
+    recurse: yes
+
+- name: Enable kibana service
+  service:
+    name: kibana.service
+    state: started
+
+
+- name: Wait for kibana to be started
+  wait_for:
+    port: 5601
+    delay: 1
+    connect_timeout: 2
+    state: present
+    timeout: 30
+

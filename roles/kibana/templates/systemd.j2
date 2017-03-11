@@ -1,0 +1,15 @@
+[Unit]
+Description=Kibana
+After=syslog.target network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/kibana/config/kibana.yml
+WorkingDirectory=/opt/kibana
+ExecStart=/opt/kibana/bin/kibana
+Restart=on-failure
+User={{ user }}
+Group={{ user }}
+
+[Install]
+WantedBy=multi-user.target
