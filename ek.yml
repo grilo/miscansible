@@ -1,0 +1,4 @@
+- hosts: localhost
+  become: true
+  roles:
+    - { role: elasticsearch, version: '5.2.2', user: 'grilo' }

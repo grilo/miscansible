@@ -1,0 +1,16 @@
+[Unit]
+Description=Elasticsearch
+After=syslog.target network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/elasticsearch/config/elasticsearch.yml
+WorkingDirectory=/opt/elasticsearch
+ExecStart=/opt/elasticsearch/bin/elasticsearch
+Restart=on-failure
+LimitNOFILE=65536
+User={{ user }}
+Group={{ user }}
+
+[Install]
+WantedBy=multi-user.target

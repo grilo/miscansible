@@ -1,0 +1,121 @@
+- name: Download elasticsearch tarball
+  unarchive:
+    src: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ version }}.tar.gz
+    dest: /opt
+    copy: no
+    remote_src: True
+
+- name: Elasticsearch service is stopped
+  service:
+    name: elasticsearch
+    pattern: /opt/elasticsearch/bin/elasticsearch
+    state: stopped
+
+- name: Wait for elasticsearch to be stopped
+  wait_for:
+    port: 9200
+    delay: 1
+    connect_timeout: 2
+    state: drained
+    timeout: 30
+
+- name: Create elasticsearch symlink
+  file:
+    src: /opt/elasticsearch-{{ version }}
+    dest: /opt/elasticsearch
+    state: link
+
+- name: Ensure elasticsearch is network accessible
+  lineinfile:
+    dest: /opt/elasticsearch/config/elasticsearch.yml
+    regexp: '^network.host'
+    insertafter: '^#network.host'
+    line: 'network.host: 0.0.0.0'
+
+- name: Ensure elasticsearch has unique cluster name
+  lineinfile:
+    dest: /opt/elasticsearch/config/elasticsearch.yml
+    regexp: '^cluster.name'
+    insertafter: '^#cluster.name'
+    line: 'cluster.name: {{ inventory_hostname }}'
+
+- name: Ensure elasticsearch data dir is self contained
+  lineinfile:
+    dest: /opt/elasticsearch/config/elasticsearch.yml
+    regexp: '^path.data'
+    insertafter: '^#path.data'
+    line: 'path.data: /opt/elasticsearch/data'
+
+- name: Ensure elasticsearch Xms is low
+  lineinfile:
+    dest: /opt/elasticsearch/config/jvm.options
+    regexp: '^-Xms'
+    insertafter: '^#-Xms'
+    line: '-Xms256m'
+
+- name: Ensure elasticsearch Xmx is low
+  lineinfile:
+    dest: /opt/elasticsearch/config/jvm.options
+    regexp: '^-Xmx'
+    insertafter: '^#-Xmx'
+    line: '-Xmx256m'
+
+- name: Create security/limits.conf template
+  template:
+    src: templates/elasticsearch.conf.j2
+    dest: /opt/elasticsearch/config/limits.elasticsearch.conf
+    mode: 0755
+
+- name: Create symlink for elasticsearch limits conf
+  file:
+    src: /opt/elasticsearch/config/limits.elasticsearch.conf
+    dest: /etc/security/limits.d/elasticsearch.conf
+    state: link
+
+- name: Create SysV initd script
+  template:
+    src: templates/initd.j2
+    dest: /opt/elasticsearch/bin/elasticsearch.initd
+    mode: 0755
+
+- name: Create elasticsearch init service symlink
+  file:
+    src: /opt/elasticsearch/bin/elasticsearch.initd
+    dest: /etc/init.d/elasticsearch
+    state: link
+
+- name: Create systemd script
+  template:
+    src: templates/systemd.j2
+    dest: /opt/elasticsearch/bin/elasticsearch.systemd
+    mode: 0755
+
+- name: Create elasticsearch systemd service symlink
+  file:
+    src: /opt/elasticsearch/bin/elasticsearch.systemd
+    dest: /etc/systemd/system/elasticsearch.service
+    state: link
+
+- name: Applying correct permissions recursively
+  file:
+    path: "/opt/elasticsearch-{{ version }}"
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: 0755
+    recurse: yes
+
+- name: Enable elasticsearch service
+  service:
+    name: elasticsearch.service
+    pattern: org.elasticsearch.bootstrap.Elasticsearch
+    state: started
+
+
+- name: Wait for elasticsearch to be started
+  wait_for:
+    port: 9200
+    delay: 1
+    connect_timeout: 2
+    state: present
+    timeout: 30
+
