@@ -2,7 +2,6 @@
   unarchive:
     src: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ version }}.tar.gz
     dest: /opt
-    copy: no
     remote_src: True
 
 - name: Elasticsearch service is stopped
