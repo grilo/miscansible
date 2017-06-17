@@ -1,0 +1,4 @@
+- hosts: localhost
+  become: true
+  roles:
+    - { role: sonarqube, version: '6.4', sonar_password: 'secret', user: 'grilo' }

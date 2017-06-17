@@ -1,0 +1,106 @@
+- name: Install the latest version of postgres
+  package:
+    name: postgresql
+    state: latest
+
+- name: Install the latest version of psycopg2 (postgres dependency)
+  package:
+    name: python-psycopg2
+    state: latest
+
+- name: sonarqube schema exists
+  postgresql_db:
+    name: sonarqube
+    encoding: UTF-8
+    state: present
+  become: true
+  become_user: postgres
+
+- name: sonarqube user exists
+  postgresql_user:
+    db: sonarqube
+    name: sonarqube
+    password: "{{ sonar_password }}"
+  become: true
+  become_user: postgres
+
+#- name: Download SonarQube archive
+#  unarchive:
+#    src: https://sonarsource.bintray.com/Distribution/sonarqube/sonarqube-{{ version }}.zip
+#    dest: /opt
+#    remote_src: True
+
+- name: SonarQube symlink exists
+  file:
+    src: /opt/sonarqube-{{ version }}
+    dest: /opt/sonarqube
+    state: link
+
+- name: SysV initd script exists
+  template:
+    src: templates/initd.j2
+    dest: /opt/sonarqube/bin/linux-x86-64/sonarqube.initd
+    mode: 0755
+
+- name: SonarQube init service symlink exists
+  file:
+    src: /opt/sonarqube/bin/linux-x86-64/sonarqube.initd
+    dest: /etc/init.d/sonarqube
+    state: link
+
+- name: Applying correct permissions recursively
+  file:
+    path: "/opt/sonarqube-{{ version }}"
+    owner: "{{ user }}"
+    group: "{{ user }}"
+    mode: 0755
+    recurse: yes
+
+- name: SonarQube service is stopped
+  service:
+    name: sonarqube
+    pattern: /opt/sonarqube/bin/linux-x86-64/sonar.sh
+    state: stopped
+
+- name: Wait for SonarQube to be stopped
+  wait_for:
+    port: 9000
+    delay: 1
+    connect_timeout: 2
+    state: drained
+    timeout: 30
+
+- name: Configure SonarQube database user
+  lineinfile:
+    dest: /opt/sonarqube-{{ version }}/conf/sonar.properties
+    regexp: '^sonar.jdbc.username'
+    insertafter: '^#sonar.jdbc.username'
+    line: 'sonar.jdbc.username=sonarqube'
+
+- name: Configure SonarQube database password
+  lineinfile:
+    dest: /opt/sonarqube-{{ version }}/conf/sonar.properties
+    regexp: '^sonar.jdbc.password'
+    insertafter: '^#sonar.jdbc.password'
+    line: 'sonar.jdbc.password={{ sonar_password }}'
+
+- name: Configure SonarQube database url
+  lineinfile:
+    dest: /opt/sonarqube-{{ version }}/conf/sonar.properties
+    regexp: '^sonar.jdbc.url'
+    insertafter: '^#sonar.jdbc.url'
+    line: 'sonar.jdbc.url=jdbc:postgresql://localhost/sonar'
+
+- name: SonarQube service is started
+  service:
+    name: sonarqube
+    pattern: /opt/sonarqube/bin/linux-x86-64/sonar.sh
+    state: started
+
+- name: Wait for SonarQube to be started
+  wait_for:
+    port: 9000
+    delay: 1
+    connect_timeout: 2
+    state: present
+    timeout: 30
