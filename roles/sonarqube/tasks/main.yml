@@ -89,7 +89,7 @@
     dest: /opt/sonarqube-{{ version }}/conf/sonar.properties
     regexp: '^sonar.jdbc.url'
     insertafter: '^#sonar.jdbc.url'
-    line: 'sonar.jdbc.url=jdbc:postgresql://localhost/sonar'
+    line: 'sonar.jdbc.url=jdbc:postgresql://localhost/sonarqube'
 
 - name: SonarQube service is started
   service:
